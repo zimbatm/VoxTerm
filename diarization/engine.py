@@ -314,11 +314,8 @@ class DiarizationEngine:
         is_ambiguous = False
         if len(scores) >= 2:
             gap = scores[0][0] - scores[1][0]
-            # Case 1: top-2 are very close (original check)
+            # Top-2 are very close — could be overlapping speakers or ambiguous
             if gap < self.CONFLICT_MARGIN:
-                is_ambiguous = True
-            # Case 2: both top-2 exceed a moderate threshold (both speakers present)
-            elif scores[0][0] > 0.30 and scores[1][0] > 0.25:
                 is_ambiguous = True
 
         # Store overlap metadata for UI consumption
@@ -449,6 +446,15 @@ class DiarizationEngine:
 
         # Periodic maintenance
         self._identify_count += 1
+
+        # End of discovery phase: re-cluster and refresh centroids to fix
+        # contamination from mixed-speaker audio during early session
+        if self._identify_count == self.DISCOVERY_PHASE_CALLS:
+            log.info("Discovery phase complete (%d speakers). Re-clustering.",
+                     len(self._speaker_centroids))
+            self._refresh_centroids()
+            self._spectral_recluster()
+
         if self._identify_count % self.RECLUSTER_INTERVAL == 0:
             self._spectral_recluster()
         # Refresh centroids and check merges on every merge cycle
