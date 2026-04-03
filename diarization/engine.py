@@ -25,8 +25,9 @@ _SCD_MIN_SAMPLES = 48000     # 3.0 s at 16 kHz — minimum audio length for SCD
 class DiarizationEngine:
     """Online speaker identification using ECAPA-TDNN embeddings."""
 
-    MATCH_THRESHOLD = 0.45        # cosine sim above this → assign to existing speaker
-    NEW_SPEAKER_THRESHOLD = 0.35  # must be below this vs ALL centroids to create new speaker
+    MATCH_THRESHOLD = 0.55        # cosine sim above this → assign to existing speaker
+    MATCH_THRESHOLD_DISCOVERY = 0.70  # stricter threshold during discovery phase
+    NEW_SPEAKER_THRESHOLD = 0.45  # must be below this vs ALL centroids to create new speaker
     CONTINUITY_BONUS = 0.05       # small bias toward keeping the same speaker across short turns
     CONFLICT_MARGIN = 0.05        # if top-2 within this → prefer more established speaker
     MERGE_THRESHOLD = 0.65        # pairwise cosine sim above this → merge clusters
@@ -40,9 +41,10 @@ class DiarizationEngine:
     SCD_WINDOW_SEC = 2.0          # sliding window duration for SCD embedding extraction
     SCD_HOP_SEC = 0.5             # hop between consecutive SCD windows
     CENTROID_EMA_ALPHA = 0.3      # EMA weight for new embedding when updating centroids
-    CENTROID_UPDATE_MIN_SIM = 0.40  # min cosine sim to centroid before updating it
+    CENTROID_UPDATE_MIN_SIM = 0.50  # min cosine sim to centroid before updating it
     MAX_EMBEDDINGS_PER_SPEAKER = 20  # cap per-speaker embedding retention
     MAX_SEGMENT_ORDER = 200       # cap temporal segment history
+    DISCOVERY_PHASE_CALLS = 30    # number of identify() calls for discovery phase
 
     def __init__(self):
         self._model = None
@@ -328,25 +330,33 @@ class DiarizationEngine:
             "overlap_speakers": overlap_speakers,
         }
 
-        # Adaptive new-speaker threshold: gets stricter over time
-        # Early session: easy to create speakers (discover who's present)
-        # After warmup: freeze speaker creation (only merge, no new)
+        # Discovery phase: use stricter match threshold during early session
+        # to aggressively discover who's in the room, then relax
+        in_discovery = self._identify_count < self.DISCOVERY_PHASE_CALLS
+        effective_match_threshold = (
+            self.MATCH_THRESHOLD_DISCOVERY if in_discovery
+            else self.MATCH_THRESHOLD
+        )
+
+        # Adaptive new-speaker threshold
         n_existing = len(self._speaker_centroids)
         can_create_new = is_high_quality
         adaptive_new_threshold = self.NEW_SPEAKER_THRESHOLD
-        if n_existing >= 2:
-            # Stricter threshold per extra speaker
+        if not in_discovery and n_existing >= 2:
+            # Stricter threshold per extra speaker (post-discovery)
             adaptive_new_threshold = max(0.10, self.NEW_SPEAKER_THRESHOLD - 0.05 * (n_existing - 2))
-        # After warmup: only allow new speakers if clearly different from ALL existing
-        # Threshold gets stricter as more speakers are created (diminishing returns)
-        if self._identify_count > 20 and self._next_id > 4:
-            # Start at 0.20, decrease by 0.03 per speaker ever created beyond 4
+        # After discovery + many speakers: freeze speaker creation
+        if not in_discovery and self._next_id > 4:
             total_created = self._next_id - 1
             freeze_threshold = max(0.05, 0.20 - 0.03 * (total_created - 4))
             if best_score > freeze_threshold:
                 can_create_new = False
 
-        if best_score >= self.MATCH_THRESHOLD and best_id is not None:
+        # Update debug info with effective threshold
+        self._last_debug['debug_phase'] = 'discovery' if in_discovery else 'stable'
+        self._last_debug['debug_threshold'] = f"{effective_match_threshold:.2f}"
+
+        if best_score >= effective_match_threshold and best_id is not None:
             sid = best_id
             should_update = is_high_quality and not is_ambiguous
 

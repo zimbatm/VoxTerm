@@ -246,8 +246,8 @@ class TestThresholdConstants:
     """Verify Phase 1 threshold values."""
 
     def test_similarity_threshold(self):
-        assert DiarizationEngine.MATCH_THRESHOLD == 0.45
-        assert DiarizationEngine.NEW_SPEAKER_THRESHOLD == 0.35
+        assert DiarizationEngine.MATCH_THRESHOLD == 0.55
+        assert DiarizationEngine.NEW_SPEAKER_THRESHOLD == 0.45
 
     def test_merge_threshold(self):
         assert DiarizationEngine.MERGE_THRESHOLD == 0.65

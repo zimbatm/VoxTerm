@@ -716,12 +716,15 @@ class VoxTerm(App):
                         n_spk = dbg.get('debug_speakers', '?')
                         rms = dbg.get('debug_rms', '?')
                         best = dbg.get('debug_best_score', '?')
+                        phase = dbg.get('debug_phase', '?')
+                        thresh = dbg.get('debug_threshold', '?')
                         seg_info = f"segs={len(segments)}" if len(segments) > 1 else ""
                         overlap_info = " [OVERLAP]" if is_overlap else ""
                         self.call_from_thread(
                             self.query_one(TranscriptPanel).system_message,
                             f"[dbg] → {speaker_label} (id={speaker_id}) "
-                            f"speakers={n_spk} sim={best} rms={rms} {seg_info}{overlap_info}",
+                            f"speakers={n_spk} sim={best}/{thresh} rms={rms} "
+                            f"[{phase}]{seg_info}{overlap_info}",
                         )
 
                     # 3. Cross-session matching for each unique speaker in segments
