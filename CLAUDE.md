@@ -182,9 +182,13 @@ session_speakers (
 | Conflict margin | 0.05 | If top-2 within this, treat as ambiguous |
 | Match threshold | 0.35 | Assign to existing speaker if above |
 | New speaker threshold | 0.30 | Must be below this vs ALL centroids to create new speaker |
-| Continuity bonus | 0.10 | Similarity boost for the most recent speaker |
+| Continuity bonus | 0.05 | Similarity boost for the most recent speaker |
 | Conflict margin | 0.05 | If top-2 within this, prefer more established speaker |
-| Cluster merge | 0.50 | Periodic pairwise merge threshold |
+| Cluster merge | 0.65 | Periodic pairwise merge threshold |
+| Centroid EMA alpha | 0.30 | Weight for new embedding in EMA centroid update |
+| Centroid update min sim | 0.40 | Min cosine sim to centroid before updating it |
+| Max embeddings/speaker | 20 | Cap per-speaker embedding retention |
+| Max segment order | 200 | Cap temporal segment history |
 | Quality RMS gate | 0.003 | Min RMS energy for centroid updates |
 | SCD change threshold | 0.4 | Cosine distance for speaker change detection |
 | SCD window / hop | 2.0s / 0.5s | Sliding window for embedding-based SCD |

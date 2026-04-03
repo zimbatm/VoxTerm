@@ -67,8 +67,9 @@ class TestMergeSpeakers:
         # Target should have both embeddings
         assert len(mock_engine._segment_embeddings[1]) == 2
 
-        # Merged centroid is running sum (a + b)
-        expected = emb_a + emb_b
+        # Merged centroid is weighted average (1 seg each), then normalized
+        expected = (1 * emb_a + 1 * emb_b) / 2.0
+        expected = expected / (np.linalg.norm(expected) + 1e-10)
         assert np.allclose(mock_engine._speaker_centroids[1], expected, atol=1e-5)
 
 
@@ -249,7 +250,7 @@ class TestThresholdConstants:
         assert DiarizationEngine.NEW_SPEAKER_THRESHOLD == 0.30
 
     def test_merge_threshold(self):
-        assert DiarizationEngine.MERGE_THRESHOLD == 0.50
+        assert DiarizationEngine.MERGE_THRESHOLD == 0.65
 
     def test_min_speech_samples(self):
         from diarization.engine import _MIN_SPEECH_SAMPLES

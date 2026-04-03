@@ -27,11 +27,11 @@ class DiarizationEngine:
 
     MATCH_THRESHOLD = 0.35        # cosine sim above this → assign to existing speaker
     NEW_SPEAKER_THRESHOLD = 0.30  # must be below this vs ALL centroids to create new speaker
-    CONTINUITY_BONUS = 0.0        # disabled — was causing speaker transitions to stick
+    CONTINUITY_BONUS = 0.05       # small bias toward keeping the same speaker across short turns
     CONFLICT_MARGIN = 0.05        # if top-2 within this → prefer more established speaker
-    MERGE_THRESHOLD = 0.50        # pairwise cosine sim above this → merge clusters
+    MERGE_THRESHOLD = 0.65        # pairwise cosine sim above this → merge clusters
     QUALITY_RMS_THRESHOLD = 0.003 # min RMS energy for quality-gated centroid update
-    MERGE_INTERVAL = 3            # check for cluster merges every N identify() calls
+    MERGE_INTERVAL = 5            # check for cluster merges every N identify() calls
     RECLUSTER_INTERVAL = 8        # spectral re-clustering every N identify() calls
     RECLUSTER_MIN_SEGMENTS = 4    # min total segments before re-clustering kicks in
     LOOP_PROB = 0.99              # VBx-style HMM self-transition probability
@@ -39,6 +39,10 @@ class DiarizationEngine:
     SCD_CHANGE_THRESHOLD = 0.6    # cosine distance above this → speaker change detected
     SCD_WINDOW_SEC = 2.0          # sliding window duration for SCD embedding extraction
     SCD_HOP_SEC = 0.5             # hop between consecutive SCD windows
+    CENTROID_EMA_ALPHA = 0.3      # EMA weight for new embedding when updating centroids
+    CENTROID_UPDATE_MIN_SIM = 0.40  # min cosine sim to centroid before updating it
+    MAX_EMBEDDINGS_PER_SPEAKER = 20  # cap per-speaker embedding retention
+    MAX_SEGMENT_ORDER = 200       # cap temporal segment history
 
     def __init__(self):
         self._model = None
@@ -371,8 +375,24 @@ class DiarizationEngine:
                                         break
 
             if should_update:
-                self._prev_centroids[sid] = self._speaker_centroids[sid].copy()
-                self._speaker_centroids[sid] = self._speaker_centroids[sid] + embedding
+                # Gate: only update centroid if embedding is close enough
+                cur_centroid = self._speaker_centroids[sid]
+                cur_norm = np.linalg.norm(cur_centroid)
+                if cur_norm > 1e-10:
+                    sim_to_centroid = self._cosine_sim(embedding, cur_centroid)
+                else:
+                    sim_to_centroid = 1.0  # first embedding, always accept
+                if sim_to_centroid >= self.CENTROID_UPDATE_MIN_SIM:
+                    self._prev_centroids[sid] = cur_centroid.copy()
+                    # EMA update: centroid = (1-α) * normalized_centroid + α * embedding
+                    normed_centroid = cur_centroid / (cur_norm + 1e-10)
+                    alpha = self.CENTROID_EMA_ALPHA
+                    new_centroid = (1.0 - alpha) * normed_centroid + alpha * embedding
+                    # Re-normalize to unit length
+                    new_norm = np.linalg.norm(new_centroid)
+                    if new_norm > 1e-10:
+                        new_centroid = new_centroid / new_norm
+                    self._speaker_centroids[sid] = new_centroid
         elif best_score >= adaptive_new_threshold and best_id is not None:
             # Uncertain zone: assign to closest but skip centroid update
             sid = best_id
@@ -382,7 +402,9 @@ class DiarizationEngine:
         elif can_create_new:
             # New speaker: below adaptive threshold vs ALL centroids
             sid = self._next_id
-            self._speaker_centroids[sid] = embedding.copy()
+            # Store normalized centroid (EMA expects unit-length centroids)
+            emb_norm = np.linalg.norm(embedding)
+            self._speaker_centroids[sid] = embedding.copy() / (emb_norm + 1e-10)
             idx = (sid - 1) % len(self._color_palette)
             self._speaker_colors[sid] = self._color_palette[idx]
             self._next_id += 1
@@ -392,14 +414,18 @@ class DiarizationEngine:
             label = self._speaker_names.get(sid, f"Speaker {sid}")
             return label, sid
 
-        # Retain per-segment embedding for later enrollment
+        # Retain per-segment embedding for later enrollment (capped to prevent leak)
         duration_sec = len(audio) / sample_rate
         if sid not in self._segment_embeddings:
             self._segment_embeddings[sid] = []
         self._segment_embeddings[sid].append((embedding.copy(), duration_sec))
+        if len(self._segment_embeddings[sid]) > self.MAX_EMBEDDINGS_PER_SPEAKER:
+            self._segment_embeddings[sid] = self._segment_embeddings[sid][-self.MAX_EMBEDDINGS_PER_SPEAKER:]
 
-        # Track temporal order for HMM smoothing
+        # Track temporal order for HMM smoothing (capped to prevent leak)
         self._segment_order.append((sid, embedding.copy()))
+        if len(self._segment_order) > self.MAX_SEGMENT_ORDER:
+            self._segment_order = self._segment_order[-self.MAX_SEGMENT_ORDER:]
 
         self._last_speaker_id = sid
 
@@ -756,7 +782,8 @@ class DiarizationEngine:
                 continue
             if len(self._speaker_centroids) < MAX_SPEAKERS:
                 sid = self._next_id
-                self._speaker_centroids[sid] = ld["embedding"].copy()
+                emb_n = np.linalg.norm(ld["embedding"])
+                self._speaker_centroids[sid] = ld["embedding"].copy() / (emb_n + 1e-10)
                 idx = (sid - 1) % len(self._color_palette)
                 self._speaker_colors[sid] = self._color_palette[idx]
                 self._next_id += 1
@@ -789,12 +816,17 @@ class DiarizationEngine:
             label = self._speaker_names.get(sid, f"Speaker {sid}")
             results.append((label, sid, start_sample, end_sample))
 
-            # Store embedding for this speaker
+            # Store embedding for this speaker (capped to prevent leak)
             duration_sec = (end_sample - start_sample) / sample_rate
             if sid not in self._segment_embeddings:
                 self._segment_embeddings[sid] = []
             self._segment_embeddings[sid].append((emb.copy(), duration_sec))
+            if len(self._segment_embeddings[sid]) > self.MAX_EMBEDDINGS_PER_SPEAKER:
+                self._segment_embeddings[sid] = self._segment_embeddings[sid][-self.MAX_EMBEDDINGS_PER_SPEAKER:]
             self._segment_order.append((sid, emb.copy()))
+        # Cap segment order after processing all local speakers
+        if len(self._segment_order) > self.MAX_SEGMENT_ORDER:
+            self._segment_order = self._segment_order[-self.MAX_SEGMENT_ORDER:]
 
         if not results:
             label, sid = self.identify(audio, sample_rate)
@@ -879,17 +911,29 @@ class DiarizationEngine:
 
     def merge_speakers(self, source_id: int, target_id: int) -> None:
         """Merge source speaker into target within the current session."""
-        # Move embeddings
+        # Count segments before moving (for weighted centroid merge)
+        target_n = len(self._segment_embeddings.get(target_id, []))
         source_embs = self._segment_embeddings.pop(source_id, [])
+        source_n = len(source_embs)
+
+        # Move embeddings
         if target_id not in self._segment_embeddings:
             self._segment_embeddings[target_id] = []
         self._segment_embeddings[target_id].extend(source_embs)
 
-        # Merge centroids (running sum: just add the sums)
+        # Merge centroids: weighted average by segment count, re-normalize
         target_c = self._speaker_centroids.get(target_id)
         source_c = self._speaker_centroids.pop(source_id, None)
         if target_c is not None and source_c is not None:
-            self._speaker_centroids[target_id] = target_c + source_c
+            total = target_n + source_n
+            if total > 0:
+                merged = (target_n * target_c + source_n * source_c) / total
+            else:
+                merged = (target_c + source_c) / 2.0
+            norm = np.linalg.norm(merged)
+            if norm > 1e-10:
+                merged = merged / norm
+            self._speaker_centroids[target_id] = merged
 
         # Clean up source state
         self._speaker_colors.pop(source_id, None)
@@ -1006,8 +1050,12 @@ class DiarizationEngine:
             if len(filtered) < 2:
                 continue
 
-            # New centroid = sum of filtered embeddings
-            self._speaker_centroids[sid] = np.stack(filtered).sum(axis=0)
+            # New centroid = normalized mean of filtered embeddings
+            new_centroid = np.stack(filtered).mean(axis=0)
+            norm = np.linalg.norm(new_centroid)
+            if norm > 1e-10:
+                new_centroid = new_centroid / norm
+            self._speaker_centroids[sid] = new_centroid
 
     def _viterbi_smooth(self, labels: list[int], k: int) -> list[int]:
         """Apply VBx-style Viterbi smoothing with speaker continuity prior.
