@@ -246,15 +246,15 @@ class TestThresholdConstants:
     """Verify Phase 1 threshold values."""
 
     def test_similarity_threshold(self):
-        assert DiarizationEngine.MATCH_THRESHOLD == 0.35
-        assert DiarizationEngine.NEW_SPEAKER_THRESHOLD == 0.30
+        assert DiarizationEngine.MATCH_THRESHOLD == 0.45
+        assert DiarizationEngine.NEW_SPEAKER_THRESHOLD == 0.35
 
     def test_merge_threshold(self):
         assert DiarizationEngine.MERGE_THRESHOLD == 0.65
 
     def test_min_speech_samples(self):
         from diarization.engine import _MIN_SPEECH_SAMPLES
-        assert _MIN_SPEECH_SAMPLES == 24000  # 1.5s at 16kHz
+        assert _MIN_SPEECH_SAMPLES == 16000  # 1.0s at 16kHz
 
 
 class TestSpectralRecluster:
@@ -456,8 +456,8 @@ class TestExtractEmbedding:
         assert result is None
 
     def test_returns_none_for_short_audio(self, loaded_mock_engine):
-        # Audio shorter than _MIN_SPEECH_SAMPLES (24000 = 1.5s)
-        audio = np.zeros(16000, dtype=np.float32)
+        # Audio shorter than _MIN_SPEECH_SAMPLES (16000 = 1.0s)
+        audio = np.zeros(8000, dtype=np.float32)
         result = loaded_mock_engine._extract_embedding(audio)
         assert result is None
 

@@ -130,7 +130,7 @@ class OnnxSpeakerEmbedder:
             return None
 
         audio = np.asarray(audio, dtype=np.float32).ravel()
-        if len(audio) < 24000:  # 1.5s minimum
+        if len(audio) < 16000:  # 1.5s minimum
             return None
 
         # Compute Fbank features (pure numpy, no PyTorch)
@@ -174,7 +174,7 @@ class OnnxSpeakerEmbedder:
             return None
 
         audio = np.asarray(audio, dtype=np.float32).ravel()
-        if len(audio) < 24000:
+        if len(audio) < 16000:
             return None
 
         feats = compute_fbank(audio, sample_rate=sample_rate)

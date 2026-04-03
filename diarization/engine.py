@@ -17,7 +17,7 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-_MIN_SPEECH_SAMPLES = 24000   # 1.5 s at 16 kHz — shorter → unreliable embeddings
+_MIN_SPEECH_SAMPLES = 16000   # 1.0 s at 16 kHz — shorter → unreliable embeddings
 MAX_SPEAKERS = 8              # hard cap on simultaneous speaker clusters
 _SCD_MIN_SAMPLES = 48000     # 3.0 s at 16 kHz — minimum audio length for SCD
 
@@ -25,8 +25,8 @@ _SCD_MIN_SAMPLES = 48000     # 3.0 s at 16 kHz — minimum audio length for SCD
 class DiarizationEngine:
     """Online speaker identification using ECAPA-TDNN embeddings."""
 
-    MATCH_THRESHOLD = 0.35        # cosine sim above this → assign to existing speaker
-    NEW_SPEAKER_THRESHOLD = 0.30  # must be below this vs ALL centroids to create new speaker
+    MATCH_THRESHOLD = 0.45        # cosine sim above this → assign to existing speaker
+    NEW_SPEAKER_THRESHOLD = 0.35  # must be below this vs ALL centroids to create new speaker
     CONTINUITY_BONUS = 0.05       # small bias toward keeping the same speaker across short turns
     CONFLICT_MARGIN = 0.05        # if top-2 within this → prefer more established speaker
     MERGE_THRESHOLD = 0.65        # pairwise cosine sim above this → merge clusters
@@ -288,6 +288,14 @@ class DiarizationEngine:
 
         best_score = scores[0][0] if scores else -1.0
         best_id = scores[0][1] if scores else None
+
+        # Populate debug info for UI
+        self._last_debug = {
+            'debug_speakers': len(self._speaker_centroids),
+            'debug_rms': f"{rms:.4f}",
+            'debug_best_score': f"{best_score:.3f}",
+            'debug_scores': [(f"{s:.3f}", sid) for s, sid in scores[:3]],
+        }
 
         # Ambiguity check: if top-2 are within CONFLICT_MARGIN, prefer
         # the speaker with more segments (more established)

@@ -32,12 +32,12 @@ class TestOnnxEmbedderConfig:
         assert result is None
 
     def test_short_audio_returns_none(self):
-        """extract() should return None for audio shorter than 1.5s."""
+        """extract() should return None for audio shorter than 1.0s."""
         embedder = OnnxSpeakerEmbedder(model_name="eres2net_large")
         # Fake load state to test the audio length check
         embedder._loaded = True
         embedder._session = "dummy"  # won't actually be called
-        audio = np.random.randn(16000).astype(np.float32)  # 1.0s < 1.5s min
+        audio = np.random.randn(8000).astype(np.float32)  # 0.5s < 1.0s min
         result = embedder.extract(audio)
         assert result is None
 

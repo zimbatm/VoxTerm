@@ -180,8 +180,8 @@ session_speakers (
 | Adaptive boost | +0.15 * exp(-samples/10) | Stricter with fewer samples |
 | MEDIUM | 0.35 | Suggest with "?" indicator |
 | Conflict margin | 0.05 | If top-2 within this, treat as ambiguous |
-| Match threshold | 0.35 | Assign to existing speaker if above |
-| New speaker threshold | 0.30 | Must be below this vs ALL centroids to create new speaker |
+| Match threshold | 0.45 | Assign to existing speaker if above |
+| New speaker threshold | 0.35 | Must be below this vs ALL centroids to create new speaker |
 | Continuity bonus | 0.05 | Similarity boost for the most recent speaker |
 | Conflict margin | 0.05 | If top-2 within this, prefer more established speaker |
 | Cluster merge | 0.65 | Periodic pairwise merge threshold |

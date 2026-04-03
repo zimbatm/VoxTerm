@@ -178,7 +178,9 @@ class DiarizationProxy:
     def identify(self, audio: np.ndarray, sample_rate: int = 16000) -> tuple[str, int]:
         if self._mode in ("inprocess", "direct"):
             with self._engine_lock:
-                return self._engine.identify(audio, sample_rate)
+                result = self._engine.identify(audio, sample_rate)
+                self._last_debug = getattr(self._engine, '_last_debug', {})
+                return result
 
         resp = self._call({
             "type": MSG_IDENTIFY,
@@ -203,7 +205,9 @@ class DiarizationProxy:
         """
         if self._mode in ("inprocess", "direct"):
             with self._engine_lock:
-                return self._engine.identify_segments(audio, sample_rate)
+                result = self._engine.identify_segments(audio, sample_rate)
+                self._last_debug = getattr(self._engine, '_last_debug', {})
+                return result
 
         resp = self._call({
             "type": MSG_IDENTIFY_MULTI,
